@@ -1,0 +1,100 @@
+---
+title: "data_extraction"
+format: html
+editor: visual
+---
+
+## Dependency Management
+
+```{r}
+
+renv::restore()
+
+#list of used packages
+library(jsonlite)
+library(markdown)
+library(dplyr)
+library(purrr)
+```
+
+## Preparing dataframe for inserting coder data
+
+```{r}
+
+# Extracting variable names from json file
+
+data_coder01 <- fromJSON("backup_CODER01_2026-08-06.json") %>% .$records %>%
+  select(-c(paper_title, meta_id, meta_year, meta_authors, meta_title, meta_journal, meta_doi, meta_reproducer))
+data_coder03 <- fromJSON("backup_Coder03_2026-07-30.json") %>% .$records %>%
+  select(-c(paper_title, meta_id, meta_year, meta_authors, meta_title, meta_journal, meta_doi, meta_reproducer))
+data_coder04 <- fromJSON("backup_Coder04_2026-07-27.json") %>% .$records %>%
+  select(-c(paper_title, meta_id, meta_year, meta_authors, meta_title, meta_journal, meta_doi, meta_reproducer))
+
+```
+
+## Rename variables
+
+```{r}
+
+# suffix each coder's columns
+c1 <- data_coder01 %>% rename_with(~paste0(., "_c1"), -paper_id)
+c3 <- data_coder03 %>% rename_with(~paste0(., "_c3"), -paper_id)
+c4 <- data_coder04 %>% rename_with(~paste0(., "_c4"), -paper_id)
+
+# Combine into one dataframe
+combined <- list(c1, c3, c4) %>% reduce(full_join, by = "paper_id")
+
+# Variables to compare
+var_compare <- c("q4_source_0", "q4_link_0",
+  "q5_other_text", "itr_value", "itr_page",
+  "itr_table_num", "itr_supp_link", "general_notes",
+  "q1_yes", "q1_no", "q2_yes",
+  "q2_no", "q_readme_yes", "q_readme_no",
+  "q_readme_unsure", "q3_ps", "q3_ci",
+  "q3_un", "q5_r", "q5_python",
+  "q5_matlab", "q5_stata", "q5_julia",
+  "q5_spss", "q5_mplus", "q5_c_cpp",
+  "q5_shell", "q5_unclear", "q5_other",
+  "q6_not_mentioned", "q6_broken", "q6_empty",
+  "q6_request", "q6_restricted", "q6_other",
+  "q_itr_main_yes", "q_itr_main_no", "q_itr_supp_yes",
+  "q_itr_supp_no"
+)
+
+# Agreement variable per variable to compare
+for (v in var_compare) {
+  cols <- paste0(v, c("_c1", "_c3", "_c4"))
+  combined[[paste0(v, "_agreement")]] <- apply(combined[cols], 1, function(x) length(unique(x)) == 1)
+}
+
+# reorder: id, then var1_c1/c2/c3/agreement, var2_c1/c2/c3/agreement, ...
+ordered_cols <- c("paper_id", unlist(lapply(var_compare, function(v) 
+  c(paste0(v, c("_c1", "_c3", "_c4")), paste0(v, "_agreement"))
+)))
+
+combined <- combined %>% select(all_of(ordered_cols))
+
+
+```
+
+## Comparing variables
+
+```{r}
+
+var_compare <- c("q4_source_0", "q4_link_0",
+  "q5_other_text", "itr_value", "itr_page",
+  "itr_table_num", "itr_supp_link", "general_notes",
+  "q1_yes", "q1_no", "q2_yes",
+  "q2_no", "q_readme_yes", "q_readme_no",
+  "q_readme_unsure", "q3_ps", "q3_ci",
+  "q3_un", "q5_r", "q5_python",
+  "q5_matlab", "q5_stata", "q5_julia",
+  "q5_spss", "q5_mplus", "q5_c_cpp",
+  "q5_shell", "q5_unclear", "q5_other",
+  "q6_not_mentioned", "q6_broken", "q6_empty",
+  "q6_request", "q6_restricted", "q6_other",
+  "q_itr_main_yes", "q_itr_main_no", "q_itr_supp_yes",
+  "q_itr_supp_no"
+)
+
+```
