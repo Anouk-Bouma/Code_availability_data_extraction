@@ -15,7 +15,96 @@ library(jsonlite)
 library(markdown)
 library(dplyr)
 library(purrr)
+library(stringr)
 ```
+
+## Column identifications
+
+```{r}
+
+# Column to connect papers on
+id_col       <- "paper_id"
+# metadata that will be excluded in the comparison
+meta_exclude <- c("paper_title", "meta_id", "meta_year", "meta_authors",
+                   "meta_title", "meta_journal", "meta_doi", "meta_reproducer")
+compare_exclude <- c("coder_id", "meta_date", "_complete")
+
+```
+
+## Extraction and comparison functions
+
+Don't change this part for new batches these are background functions.
+
+<!--# Maybe move these functions to a separate script and load them in this script so new comparisons are easy to make -->
+
+```{r}
+
+# load and suffix coder files
+load_coder_data <- function(file, id_col, exclude) {
+  coder_label <- basename(file) %>% str_extract("(?i)coder\\d+") %>% str_to_lower()
+  fromJSON(file)$records %>%
+    select(-any_of(exclude)) %>%
+    rename_with(~paste0(., "_", coder_label), -all_of(id_col))
+}
+
+# Combinme coderfiles
+combine_coders <- function(files, id_col, exclude = meta_exclude) {
+  map(files, load_coder_data, id_col = id_col, exclude = exclude) %>%
+    reduce(full_join, by = id_col)
+}
+
+# Function to check if agreement should be checked and for which coders (only those that coded the paper) 
+# This function is used in the next function
+check_agreement <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) < 2) return(NA)   # 0 or 1 coder rated this — can't assess agreement
+  length(unique(x)) == 1
+}
+
+# Add agreement column per variable
+add_agreement_cols <- function(df, id_col, exclude = compare_exclude) {
+  value_cols <- setdiff(names(df), id_col)
+  stems <- value_cols %>% str_remove("_coder\\d+$") %>% unique() %>% setdiff(exclude)
+
+  for (v in stems) {
+    cols <- value_cols[str_detect(value_cols, paste0("^", v, "_coder\\d+$"))]
+    if (length(cols) > 1) {
+      df[[paste0(v, "_agreement")]] <- apply(df[cols], 1, function(x) check_agreement(x))
+    }
+  }
+  df
+}
+
+# Reorder: id, then var_c1/c2/.../agreement per variable
+reorder_combined <- function(df, id_col) {
+  agreement_cols <- names(df)[str_detect(names(df), "_agreement$")]
+  stems <- str_remove(agreement_cols, "_agreement$")
+
+  ordered <- c(id_col, unlist(lapply(stems, function(v) {
+    coder_cols <- sort(names(df)[str_detect(names(df), paste0("^", v, "_coder\\d+$"))])
+    c(coder_cols, paste0(v, "_agreement"))
+  })))
+  df %>% select(all_of(ordered))
+}
+
+```
+
+## Using the functions for a batch
+
+<!--# Other version here that automatically lists the .json files in the folder instead of having to type them out? -->
+
+```{r}
+
+files_batch1 <- c("backup_CODER01_2026-08-06.json",
+                   "backup_Coder03_2026-07-30.json",
+                   "backup_Coder04_2026-07-27.json")
+
+combined <- combine_coders(files_batch1, id_col) %>%
+  add_agreement_cols(id_col) %>%
+  reorder_combined(id_col)
+```
+
+## ------OLD scraps——
 
 ## Preparing dataframe for inserting coder data
 
