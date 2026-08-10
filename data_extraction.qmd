@@ -16,6 +16,8 @@ library(markdown)
 library(dplyr)
 library(purrr)
 library(stringr)
+library(tidyr)
+library(irr)
 ```
 
 ## Column identifications
@@ -29,6 +31,30 @@ meta_exclude <- c("paper_title", "meta_id", "meta_year", "meta_authors",
                    "meta_title", "meta_journal", "meta_doi", "meta_reproducer")
 compare_exclude <- c("coder_id", "meta_date", "_complete")
 
+# Toggle for the pilot numbering fix (q3->q4, q4->q5, q5->q6, q6->q7).
+# Set to FALSE for batches whose raw files already use the corrected numbering.
+apply_pilot_rename <- TRUE
+
+# Declarative recode spec, applied to each coder file's raw columns before
+# suffixing. Add/remove entries here for future batches without touching
+# load_coder_data itself.
+# - type = "onehot": several 0/1 columns -> single column holding the mapped
+#   code of whichever source column is 1; source columns are dropped.
+# - type = "value": single text column -> its string values remapped to the
+#   given codes; source column is dropped.
+# Column names below are POST pilot-rename (see apply_pilot_rename above),
+# since the rename runs before the recode inside load_coder_data.
+recode_spec <- list(
+  q1_supp       = list(type = "onehot", map = c(q1_yes = 1, q1_no = 0)),
+  q2_code       = list(type = "onehot", map = c(q2_yes = 1, q2_no = 0)),
+  q3_rm         = list(type = "onehot", map = c(q_readme_yes = 1, q_readme_no = 0, q_readme_unsure = 2)),
+  q4_sufficient = list(type = "onehot", map = c(q4_ps = 1, q4_ci = 0, q4_un = 2)),
+  q_itr_main    = list(type = "onehot", map = c(q_itr_main_yes = 1, q_itr_main_no = 0)),
+  q_itr_supp    = list(type = "onehot", map = c(q_itr_supp_yes = 1, q_itr_supp_no = 0)),
+  q5_source     = list(type = "value", col = "q5_source_0",
+                        map = c("External Repository" = 1, "Journal website" = 2))
+)
+
 ```
 
 ## Extraction and comparison functions
@@ -39,17 +65,69 @@ Don't change this part for new batches these are background functions.
 
 ```{r}
 
-# load and suffix coder files
-load_coder_data <- function(file, id_col, exclude) {
-  coder_label <- basename(file) %>% str_extract("(?i)coder\\d+") %>% str_to_lower()
-  fromJSON(file)$records %>%
-    select(-any_of(exclude)) %>%
-    rename_with(~paste0(., "_", coder_label), -all_of(id_col))
+# Shift raw column names by the pilot numbering fix (q3->q4, q4->q5, q5->q6, q6->q7)
+shift_pilot_numbering <- function(names_vec) {
+  names_vec %>%
+    str_replace("q6", "q7") %>%
+    str_replace("q5", "q6") %>%
+    str_replace("q4", "q5") %>%
+    str_replace("q3", "q4")
 }
 
-# Combinme coderfiles
-combine_coders <- function(files, id_col, exclude = meta_exclude) {
-  map(files, load_coder_data, id_col = id_col, exclude = exclude) %>%
+# Collapse a set of 0/1 dummy columns into a single coded column
+recode_onehot <- function(df, out_name, map) {
+  present <- intersect(names(map), names(df))
+  if (length(present) == 0) return(df)
+
+  df[[out_name]] <- apply(df[present], 1, function(row) {
+    hit <- present[which(row == 1)]
+    if (length(hit) != 1) return(NA_real_)
+    unname(map[hit])
+  })
+  df %>% select(-all_of(present))
+}
+
+# Remap a single text column's values to codes
+recode_value <- function(df, out_name, col, map) {
+  if (!col %in% names(df)) return(df)
+  df[[out_name]] <- unname(map[df[[col]]])
+  df %>% select(-all_of(col))
+}
+
+# Apply every entry in recode_spec to a coder's raw data
+apply_recode_spec <- function(df, spec) {
+  for (out_name in names(spec)) {
+    entry <- spec[[out_name]]
+    df <- switch(entry$type,
+      onehot = recode_onehot(df, out_name, entry$map),
+      value  = recode_value(df, out_name, entry$col, entry$map),
+      stop("Unknown recode type: ", entry$type)
+    )
+  }
+  df
+}
+
+# load, pilot-rename, recode, and suffix coder files
+load_coder_data <- function(file, id_col, exclude, recode = TRUE, pilot_rename = apply_pilot_rename) {
+  coder_label <- basename(file) %>% str_extract("(?i)coder\\d+") %>% str_to_lower()
+
+  df <- fromJSON(file)$records %>%
+    select(-any_of(exclude))
+
+  if (pilot_rename) {
+    df <- df %>% rename_with(shift_pilot_numbering, -all_of(id_col))
+  }
+  if (recode) {
+    df <- df %>% apply_recode_spec(recode_spec)
+  }
+
+  df %>% rename_with(~paste0(., "_", coder_label), -all_of(id_col))
+}
+
+# Combine coder files
+combine_coders <- function(files, id_col, exclude = meta_exclude, recode = TRUE, pilot_rename = apply_pilot_rename) {
+  map(files, load_coder_data, id_col = id_col, exclude = exclude,
+      recode = recode, pilot_rename = pilot_rename) %>%
     reduce(full_join, by = id_col)
 }
 
@@ -102,6 +180,75 @@ files_batch1 <- c("backup_CODER01_2026-08-06.json",
 combined <- combine_coders(files_batch1, id_col) %>%
   add_agreement_cols(id_col) %>%
   reorder_combined(id_col)
+```
+
+## Pilot numbering fix and recoding
+
+The pilot renumbering (q3->q4, q4->q5, q5->q6, q6->q7) and the dummy/text
+recoding (`q1_supp`, `q2_code`, `q3_rm`, `q4_sufficient`, `q_itr_main`,
+`q_itr_supp`, `q5_source`) now happen inside `load_coder_data`, before the
+`_coderN` suffix is added — see `apply_pilot_rename` and `recode_spec` under
+Column identifications. Set `apply_pilot_rename <- FALSE` there, or pass
+`recode = FALSE` to `combine_coders()`, to turn either off for a batch that
+doesn't need it.
+
+## Long-format data for review and IRR
+
+```{r}
+
+long_df <- combined %>%
+  # combined mixes numeric/logical/free-text columns; pivot_longer needs one
+  # common type for the unified value column, so coerce to character first
+  mutate(across(-all_of(id_col), as.character)) %>%
+  pivot_longer(
+    cols = -all_of(id_col),
+    names_to = c("variable", "field"),
+    names_pattern = "^(.*)_(coder\\d+|agreement)$",
+    values_to = "value"
+  ) %>%
+  pivot_wider(names_from = field, values_from = value)
+
+```
+
+## Review table of disagreements
+
+```{r}
+
+review_table <- long_df %>%
+  filter(agreement == FALSE) %>%
+  mutate(resolution = NA_character_, notes = NA_character_) %>%
+  arrange(variable, .data[[id_col]])
+
+by_variable <- review_table %>% count(variable, name = "n_discrepancies") %>% arrange(desc(n_discrepancies))
+by_case     <- review_table %>% count(.data[[id_col]], name = "n_discrepancies") %>% arrange(desc(n_discrepancies))
+remaining   <- sum(is.na(review_table$resolution))
+
+```
+
+## Inter-rater reliability (Krippendorff's alpha)
+
+```{r}
+
+irr_long <- long_df %>%
+  select(-agreement) %>%
+  pivot_longer(cols = starts_with("coder"), names_to = "coder", values_to = "value") %>%
+  filter(!is.na(value))
+
+compute_agreement_stats <- function(irr_long, id_col) {
+  irr_long %>%
+    group_by(variable) %>%
+    group_modify(~ {
+      mat <- .x %>%
+        pivot_wider(id_cols = all_of(id_col), names_from = coder, values_from = value) %>%
+        select(-all_of(id_col)) %>%
+        as.matrix() %>% t()
+      a <- irr::kripp.alpha(mat, method = "nominal")
+      tibble(alpha = a$value, n_cases = a$subjects, n_raters = a$raters)
+    })
+}
+
+agreement_stats <- compute_agreement_stats(irr_long, id_col)
+
 ```
 
 ## ------OLD scraps——
