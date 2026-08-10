@@ -112,7 +112,10 @@ load_coder_data <- function(file, id_col, exclude, recode = TRUE, pilot_rename =
   coder_label <- basename(file) %>% str_extract("(?i)coder\\d+") %>% str_to_lower()
 
   df <- fromJSON(file)$records %>%
-    select(-any_of(exclude))
+    select(-any_of(exclude)) %>%
+    # "not filled out" is stored as "" in the raw export, not JSON null;
+    # convert to real NA so it's excluded from agreement/IRR, not compared as a value
+    mutate(across(where(is.character), ~na_if(., "")))
 
   if (pilot_rename) {
     df <- df %>% rename_with(shift_pilot_numbering, -all_of(id_col))
@@ -242,6 +245,12 @@ compute_agreement_stats <- function(irr_long, id_col) {
         pivot_wider(id_cols = all_of(id_col), names_from = coder, values_from = value) %>%
         select(-all_of(id_col)) %>%
         as.matrix() %>% t()
+
+      # fewer than 2 raters (common for sparsely-filled free-text fields) ->
+      # agreement is undefined, not computable
+      if (nrow(mat) < 2 || ncol(mat) < 1) {
+        return(tibble(alpha = NA_real_, n_cases = ncol(mat), n_raters = nrow(mat)))
+      }
       a <- irr::kripp.alpha(mat, method = "nominal")
       tibble(alpha = a$value, n_cases = a$subjects, n_raters = a$raters)
     })
