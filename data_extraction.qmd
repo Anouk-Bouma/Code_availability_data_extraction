@@ -66,6 +66,8 @@ Don't change this part for new batches these are background functions.
 
 <!--# For final data the renumbering from this function should be removed -->
 
+<!--# For final extraction: rename the variables to something that is easily recocnizable also for the other coders so discrepancy review is easier -->
+
 ```{r}
 
 # Shift raw column names by the pilot numbering fix (q3->q4, q4->q5, q5->q6, q6->q7)
