@@ -18,6 +18,7 @@ library(purrr)
 library(stringr)
 library(tidyr)
 library(irr)
+library(xlsx)
 ```
 
 ## Column identifications
@@ -62,6 +63,8 @@ recode_spec <- list(
 Don't change this part for new batches these are background functions.
 
 <!--# Maybe move these functions to a separate script and load them in this script so new comparisons are easy to make -->
+
+<!--# For final data the renumbering from this function should be removed -->
 
 ```{r}
 
@@ -178,7 +181,8 @@ reorder_combined <- function(df, id_col) {
 
 files_batch1 <- c("backup_CODER01_2026-08-06.json",
                    "backup_Coder03_2026-07-30.json",
-                   "backup_Coder04_2026-07-27.json")
+                   "backup_Coder04_2026-07-27.json",
+                  "backup_Coder02_2026-09-10.json")
 
 combined <- combine_coders(files_batch1, id_col) %>%
   add_agreement_cols(id_col) %>%
@@ -187,13 +191,7 @@ combined <- combine_coders(files_batch1, id_col) %>%
 
 ## Pilot numbering fix and recoding
 
-The pilot renumbering (q3->q4, q4->q5, q5->q6, q6->q7) and the dummy/text
-recoding (`q1_supp`, `q2_code`, `q3_rm`, `q4_sufficient`, `q_itr_main`,
-`q_itr_supp`, `q5_source`) now happen inside `load_coder_data`, before the
-`_coderN` suffix is added — see `apply_pilot_rename` and `recode_spec` under
-Column identifications. Set `apply_pilot_rename <- FALSE` there, or pass
-`recode = FALSE` to `combine_coders()`, to turn either off for a batch that
-doesn't need it.
+The pilot renumbering (q3-\>q4, q4-\>q5, q5-\>q6, q6-\>q7) and the dummy/text recoding (`q1_supp`, `q2_code`, `q3_rm`, `q4_sufficient`, `q_itr_main`, `q_itr_supp`, `q5_source`) now happen inside `load_coder_data`, before the `_coderN` suffix is added — see `apply_pilot_rename` and `recode_spec` under Column identifications. Set `apply_pilot_rename <- FALSE` there, or pass `recode = FALSE` to `combine_coders()`, to turn either off for a batch that doesn't need it.
 
 ## Long-format data for review and IRR
 
@@ -225,6 +223,9 @@ review_table <- long_df %>%
 by_variable <- review_table %>% count(variable, name = "n_discrepancies") %>% arrange(desc(n_discrepancies))
 by_case     <- review_table %>% count(.data[[id_col]], name = "n_discrepancies") %>% arrange(desc(n_discrepancies))
 remaining   <- sum(is.na(review_table$resolution))
+
+# Save as an excel file
+#write.xlsx(review_table, "discrepancies.xlsx")
 
 ```
 
