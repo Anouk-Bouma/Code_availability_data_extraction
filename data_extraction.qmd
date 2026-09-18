@@ -56,6 +56,22 @@ recode_spec <- list(
                         map = c("External Repository" = 1, "Journal website" = 2))
 )
 
+# Desired column/variable order for combined and paper_coder_data. Variables
+# not listed here (e.g. a future batch's new questions) are kept, appended
+# after these in their existing order.
+variable_order <- c(
+  "q1_supp", "q2_code", "q3_rm", "q3_notes", "q4_sufficient",
+  "q5_source", "q5_link_0", "q5_notes_0",
+  "q6_r", "q6_python", "q6_matlab", "q6_stata", "q6_julia", "q6_spss",
+  "q6_mplus", "q6_c_cpp", "q6_shell", "q6_unclear", "q6_other",
+  "q6_other_text", "q6_notes",
+  "q7_not_mentioned", "q7_broken", "q7_empty", "q7_request",
+  "q7_restricted", "q7_other", "q7_notes",
+  "q_itr_main", "q_itr_supp",
+  "itr_value", "itr_page", "itr_table_num", "itr_supp_link",
+  "general_notes"
+)
+
 ```
 
 ## Extraction and comparison functions
@@ -129,6 +145,10 @@ load_coder_data <- function(file, id_col, exclude, recode = TRUE, pilot_rename =
     df <- df %>% apply_recode_spec(recode_spec)
   }
 
+  if ("q_readme_notes" %in% names(df)) {
+    df <- df %>% rename(q3_notes = q_readme_notes)
+  }
+
   df %>% rename_with(~paste0(., "_", coder_label), -all_of(id_col))
 }
 
@@ -161,10 +181,12 @@ add_agreement_cols <- function(df, id_col, exclude = compare_exclude) {
   df
 }
 
-# Reorder: id, then var_c1/c2/.../agreement per variable
-reorder_combined <- function(df, id_col) {
+# Reorder: id, then var_c1/c2/.../agreement per variable, variables placed
+# according to var_order (unlisted variables keep their existing order, appended last)
+reorder_combined <- function(df, id_col, var_order = variable_order) {
   agreement_cols <- names(df)[str_detect(names(df), "_agreement$")]
   stems <- str_remove(agreement_cols, "_agreement$")
+  stems <- stems[order(match(stems, var_order))]
 
   ordered <- c(id_col, unlist(lapply(stems, function(v) {
     coder_cols <- sort(names(df)[str_detect(names(df), paste0("^", v, "_coder\\d+$"))])
@@ -208,7 +230,7 @@ paper_coder_data <- combined %>%
     names_to = c(".value", "coder_id"),
     names_pattern = "^(.*)_(coder\\d+)$"
   ) %>%
-  relocate(all_of(id_col), coder_id) %>%
+  relocate(all_of(id_col), coder_id, any_of(variable_order)) %>%
   arrange(.data[[id_col]], coder_id)
 
 ```
