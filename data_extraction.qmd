@@ -266,6 +266,36 @@ agreement_stats <- compute_agreement_stats(irr_long, id_col) %>%
 
 ```
 
+## Group-level disagreement (Q6, Q7, itr_)
+
+<!--# New, additive block — does not change any of the per-item agreement/IRR results computed above. -->
+
+For each group below, flags a paper `TRUE` if *any* of that group's variables shows a coder disagreement for that paper (e.g. `q6_r` disagreeing makes `q6_disagreement` `TRUE`, regardless of whether the other Q6 items agree). `NA` if none of the group's variables had 2+ raters for that paper.
+
+```{r}
+
+# Add prefixes here to flag more groups the same way, without touching the logic below
+disagreement_groups <- c(q6 = "^q6_", q7 = "^q7_", itr = "^itr_")
+
+group_disagreement <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(NA)
+  any(x == "FALSE")
+}
+
+group_disagreements <- long_df %>%
+  filter(str_detect(variable, paste(disagreement_groups, collapse = "|"))) %>%
+  mutate(group = case_when(
+    str_detect(variable, disagreement_groups["q6"])  ~ "q6",
+    str_detect(variable, disagreement_groups["q7"])  ~ "q7",
+    str_detect(variable, disagreement_groups["itr"]) ~ "itr"
+  )) %>%
+  group_by(.data[[id_col]], group) %>%
+  summarise(disagreement = group_disagreement(agreement), .groups = "drop") %>%
+  pivot_wider(names_from = group, values_from = disagreement, names_glue = "{group}_disagreement")
+
+```
+
 ## ------OLD scraps——
 
 ## Preparing dataframe for inserting coder data
