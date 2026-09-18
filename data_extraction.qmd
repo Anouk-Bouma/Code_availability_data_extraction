@@ -259,7 +259,10 @@ compute_agreement_stats <- function(irr_long, id_col) {
     })
 }
 
-agreement_stats <- compute_agreement_stats(irr_long, id_col)
+agreement_stats <- compute_agreement_stats(irr_long, id_col) %>%
+  left_join(by_variable, by = "variable") %>%
+  rename(n_disagreements = n_discrepancies) %>%
+  mutate(n_disagreements = replace_na(n_disagreements, 0))
 
 ```
 
