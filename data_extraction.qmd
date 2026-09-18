@@ -195,6 +195,24 @@ combined <- combine_coders(files_batch1, id_col) %>%
 
 The pilot renumbering (q3-\>q4, q4-\>q5, q5-\>q6, q6-\>q7) and the dummy/text recoding (`q1_supp`, `q2_code`, `q3_rm`, `q4_sufficient`, `q_itr_main`, `q_itr_supp`, `q5_source`) now happen inside `load_coder_data`, before the `_coderN` suffix is added — see `apply_pilot_rename` and `recode_spec` under Column identifications. Set `apply_pilot_rename <- FALSE` there, or pass `recode = FALSE` to `combine_coders()`, to turn either off for a batch that doesn't need it.
 
+## Paper x coder dataset
+
+One row per paper x coder combination, every variable as its own column with its coded value (recoded/renumbered as configured above) — no comparison/agreement columns, since those aren't defined at the single-coder level.
+
+```{r}
+
+paper_coder_data <- combined %>%
+  select(-ends_with("_agreement")) %>%
+  pivot_longer(
+    cols = matches("_coder\\d+$"),
+    names_to = c(".value", "coder_id"),
+    names_pattern = "^(.*)_(coder\\d+)$"
+  ) %>%
+  relocate(all_of(id_col), coder_id) %>%
+  arrange(.data[[id_col]], coder_id)
+
+```
+
 ## Long-format data for review and IRR
 
 ```{r}
